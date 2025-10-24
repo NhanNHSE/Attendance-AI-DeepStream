@@ -1,0 +1,64 @@
+version: "3.9"
+
+name: attendance-ai
+
+services:
+  ifr:
+    build:
+      context: ./InsightFace-rest
+      dockerfile: Dockerfile.jetson
+      args:
+        DEEPSTREAM_TAG: 6.3-triton-multiarch
+    container_name: ifr
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - IF_REST_BACKEND=trt
+      - IF_REST_DET_NAME=scrfd_2.5g_bnkps
+      - IF_REST_REC_NAME=glintr100
+      - IF_REST_FORCE_FP16=true
+      - IF_REST_WORKERS=1
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+    volumes:
+      - ./InsightFace-rest/InsightFace-REST/models:/opt/insightface-rest/models
+      - ./InsightFace-rest/InsightFace-REST/.cache:/opt/insightface-rest/.cache
+    ports:
+      - "18081:18081"
+    restart: unless-stopped
+    shm_size: "1gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:18081/docs >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+
+  deepstream:
+    build:
+      context: ./ds
+      dockerfile: Dockerfile.ds
+      args:
+        DEEPSTREAM_TAG: 6.3-triton-multiarch
+    container_name: ds
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - IF_REST_URL=http://ifr:18081
+      # Đổi DS_CMD nếu muốn chạy deepstream-app -c:
+      # - DS_CMD=deepstream-app -c /workspace/ds_configs/your_config.txt
+    depends_on:
+      ifr:
+        condition: service_healthy
+    volumes:
+      - ./ds:/workspace/app
+      - ./ds/ds_configs:/workspace/ds_configs
+    restart: unless-stopped
+    shm_size: "1gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864

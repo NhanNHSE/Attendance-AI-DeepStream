@@ -1,0 +1,48 @@
+# Jetson (ARM64) base with DeepStream 6.3 + TensorRT
+ARG DEEPSTREAM_TAG=6.3-triton-multiarch
+FROM nvcr.io/nvidia/deepstream:${DEEPSTREAM_TAG}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    IF_REST_HTTP_PORT=18081 \
+    IF_REST_BACKEND=trt \
+    IF_REST_DET_NAME=scrfd_2.5g_bnkps \
+    IF_REST_REC_NAME=glintr100 \
+    IF_REST_FORCE_FP16=true \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1
+
+# System deps (ARM64). Dùng OpenCV từ apt.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip python3-dev python3-opencv \
+    build-essential git ca-certificates curl \
+    cmake pkg-config libprotobuf-dev protobuf-compiler \
+    libjpeg-dev zlib1g-dev libopenblas-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Làm việc trong thư mục app
+WORKDIR /opt/insightface-rest
+
+# 1) COPY requirements trước để tận dụng cache layer
+#    (đường dẫn tính từ context build: InsightFace-rest/)
+COPY InsightFace-REST/requirements.txt ./requirements.txt
+
+# 2) Cài pip/setuptools trước (đặt trong ngoặc kép để tránh redirection)
+RUN python3 -m pip install --upgrade "pip==24.2" "setuptools<75" wheel
+
+# 3) Cài deps từ requirements.txt
+RUN python3 -m pip install -r requirements.txt
+
+# 4) COPY toàn bộ source vào image
+COPY InsightFace-REST/ ./
+
+# 5) Đảm bảo entrypoint chạy được
+RUN chmod +x entrypoint.sh || true
+
+# Cache models/engines TensorRT
+VOLUME ["/opt/insightface-rest/models", "/opt/insightface-rest/.cache"]
+
+EXPOSE 18081
+CMD ["bash", "entrypoint.sh"]
